@@ -1,0 +1,35 @@
+[workspace]
+name = "nanodistill"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+# default: data preparation, driving Modal jobs, analysis and tests (CPU only)
+[dependencies]
+python = "3.12.*"
+numpy = "*"
+pytest = "*"
+
+[pypi-dependencies]
+modal = "*"
+datasets = "*"
+huggingface_hub = "*"
+transformers = "*"
+jinja2 = "*"
+nanodistill = { path = ".", editable = true }
+
+[tasks]
+test = "pytest -q tests"
+
+# eval: BFCL on the local GPU. bfcl-eval pins numpy 1.26.4 and vllm 0.8.5 (which has Qwen3),
+# so this environment does not share the default one.
+[feature.eval.dependencies]
+python = "3.12.*"
+numpy = "1.26.4.*"
+pytest = "*"
+
+[feature.eval.pypi-dependencies]
+bfcl-eval = { version = "*", extras = ["oss-eval-vllm"] }
+nanodistill = { path = ".", editable = true }
+
+[environments]
+eval = { features = ["eval"], no-default-feature = true }

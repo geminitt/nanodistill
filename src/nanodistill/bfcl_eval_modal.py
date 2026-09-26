@@ -1,0 +1,92 @@
+"""BFCL v4 single-turn evaluation on Modal, for the baselines and every trained student.
+
+    pixi run modal run src/nanodistill/bfcl_eval_modal.py --models baselines
+    pixi run modal run --detach src/nanodistill/bfcl_eval_modal.py --models students
+
+BFCL's own Qwen3 FC handler builds the prompt; the students' prompt and output format was tested against it
+(tests/test_bfcl_format.py). Two ways of running a model:
+- "think": BFCL's handler as is; Qwen3 thinks before calling (BFCL's standard setting for Qwen3).
+- "direct": the same prompt plus the empty think block, i.e. Qwen3's non-thinking mode, which is how the
+  students without reasoning traces were trained.
+Each (model, mode) gets its own BFCL project folder on the volume; a finished one is not recomputed.
+"""
+
+import json
+import os
+import subprocess
+
+import modal
+
+CATEGORY = "single_turn"          # non-live and live single-turn categories; multi-turn and agentic are left out
+GPU = os.environ.get("NANODISTILL_EVAL_GPU", "A10G")
+
+app = modal.App("nanodistill-bfcl")
+image = (modal.Image.debian_slim(python_version="3.12")
+         .pip_install("bfcl-eval[oss-eval-vllm]==2026.3.23", "numpy==1.26.4"))
+hf_cache = modal.Volume.from_name("hf-cache", create_if_missing=True)
+volume = modal.Volume.from_name("nanodistill", create_if_missing=True)
+
+RUNNER = r'''
+import sys
+from bfcl_eval.constants import model_config as mc
+from bfcl_eval.model_handler.local_inference.qwen_fc import QwenFCHandler
+
+class DirectQwenFCHandler(QwenFCHandler):
+    """Qwen3 in non-thinking mode: the prompt ends with the empty think block."""
+    def _format_prompt(self, messages, function):
+        return super()._format_prompt(messages, function) + "<think>\n\n</think>\n\n"
+
+name, hf_name, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+base = mc.MODEL_CONFIG_MAPPING["Qwen/Qwen3-0.6B-FC"]
+mc.MODEL_CONFIG_MAPPING[name] = type(base)(**{**base.__dict__, "model_name": hf_name, "display_name": name,
+    "model_handler": DirectQwenFCHandler if mode == "direct" else QwenFCHandler})
+from bfcl_eval.__main__ import cli
+sys.argv = ["bfcl"] + sys.argv[4:]
+cli()
+'''
+
+
+@app.function(image=image, gpu=GPU, timeout=3 * 3600, volumes={"/root/.cache/huggingface": hf_cache, "/vol": volume},
+              secrets=[modal.Secret.from_name("huggingface")])
+def evaluate(label: str, hf_name: str, mode: str, local_path: str = "") -> dict:
+    root = f"/vol/bfcl/{label}_{mode}"
+    summary = f"{root}/summary.json"
+    if os.path.exists(summary):
+        return json.load(open(summary))
+    os.makedirs(root, exist_ok=True)
+    env = {**os.environ, "BFCL_PROJECT_ROOT": root}
+    open("/tmp/runner.py", "w").write(RUNNER)
+    registry = f"nanodistill/{label}-{mode}-FC"
+    gen = ["generate", "--model", registry, "--test-category", CATEGORY, "--backend", "vllm", "--num-gpus", "1",
+           "--gpu-memory-utilization", "0.9"] + (["--local-model-path", local_path] if local_path else [])
+    subprocess.run(["python", "/tmp/runner.py", registry, hf_name, mode] + gen, env=env, check=True)
+    subprocess.run(["python", "/tmp/runner.py", registry, hf_name, mode,
+                    "evaluate", "--model", registry, "--test-category", CATEGORY], env=env, check=True)
+    scores = {}
+    for dirpath, _, files in os.walk(f"{root}/score"):
+        for f in files:
+            if f.endswith("_score.json"):
+                head = json.loads(open(os.path.join(dirpath, f)).readline())
+                scores[f.replace("BFCL_v4_", "").replace("_score.json", "")] = head
+    out = {"label": label, "mode": mode, "hf_name": hf_name, "scores": scores}
+    json.dump(out, open(summary, "w"), indent=1)
+    volume.commit()
+    return out
+
+
+BASELINES = [("qwen3-0.6b", "Qwen/Qwen3-0.6B"), ("qwen3-8b", "Qwen/Qwen3-8B")]
+
+
+@app.local_entrypoint()
+def main(models: str = "baselines", modes: str = "direct,think"):
+    jobs = []
+    if models == "baselines":
+        jobs = [(label, hf, mode, "") for label, hf in BASELINES for mode in modes.split(",")]
+    else:   # every finished student, in the mode it was trained for
+        for entry in volume.listdir("/students"):
+            name = entry.path.split("/")[-1]
+            mode = "think" if name.startswith("cot_full") else "direct"
+            jobs.append((name, "Qwen/Qwen3-0.6B", mode, f"/vol/students/{name}"))
+    for result in evaluate.starmap(jobs):
+        print(json.dumps({"label": result["label"], "mode": result["mode"],
+                          "scores": {k: v.get("accuracy") for k, v in result["scores"].items()}}))
