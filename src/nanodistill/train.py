@@ -99,13 +99,15 @@ def build(condition: str, teacher_dir: str, tok) -> list[dict]:
 
 
 @app.function(image=image, gpu=GPU, timeout=4 * 3600, volumes={"/root/.cache/huggingface": hf_cache, "/vol": volume},
-              secrets=[modal.Secret.from_name("huggingface")])
-def train(condition: str, seed: int, steps: int = STEPS, teacher_dir: str = "/vol/teacher") -> dict:
+              secrets=[modal.Secret.from_name("huggingface-secret")])
+def train(condition: str, seed: int, steps: int = STEPS, teacher_dir: str = "/vol/teacher",
+          out_root: str = "/vol/students") -> dict:
+    import numpy as np
     import torch
     import torch.nn.functional as F
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    out_dir = f"/vol/students/{condition}_s{seed}" + ("" if steps == STEPS else f"_steps{steps}")
+    out_dir = f"{out_root}/{condition}_s{seed}" + ("" if steps == STEPS else f"_steps{steps}")
     if os.path.exists(f"{out_dir}/model.safetensors"):
         return {"condition": condition, "seed": seed, "status": "done already"}
     torch.manual_seed(seed)
@@ -143,20 +145,18 @@ def train(condition: str, seed: int, steps: int = STEPS, teacher_dir: str = "/vo
                 mask[r, len(d["prompt"]):len(seq)] = True   # positions whose token is a target
             x, mask, attn = x.cuda(), mask.cuda(), attn.cuda()
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                logits = model(x, attention_mask=attn).logits[:, :-1].float()
-            logp = F.log_softmax(logits, -1)
-            tgt_mask = mask[:, 1:]
-            if "top_ids" in micro[0]:
-                loss = 0.0
-                for r, d in enumerate(micro):             # soft targets: -sum p_T log p_S over the teacher's top 20
-                    p0 = len(d["prompt"]) - 1
-                    ids = torch.tensor(d["top_ids"], device="cuda").long()
-                    p_t = torch.softmax(torch.tensor(d["top_lp"], device="cuda"), -1)
-                    lp_s = logp[r, p0:p0 + len(d["target"])].gather(-1, ids)
-                    loss = loss - (p_t * lp_s).sum()
+                hidden = model.model(input_ids=x, attention_mask=attn).last_hidden_state
+                # vocabulary logits only where a target is predicted: full-sequence logits for a 152k
+                # vocabulary would take several GB per micro-batch
+                logits = model.lm_head(hidden[:, :-1][mask[:, 1:]])
+            logp = F.log_softmax(logits.float(), -1)             # [targets in this micro-batch, vocab]
+            if "top_ids" in micro[0]:     # soft targets: -sum p_T log p_S over the teacher's top 20
+                ids = torch.tensor(np.concatenate([d["top_ids"] for d in micro]), device="cuda").long()
+                p_t = torch.softmax(torch.tensor(np.concatenate([d["top_lp"] for d in micro]), device="cuda"), -1)
+                loss = -(p_t * logp.gather(-1, ids)).sum()
             else:
-                y = x[:, 1:]
-                loss = -(logp.gather(-1, y.unsqueeze(-1)).squeeze(-1) * tgt_mask).sum()
+                y = x[:, 1:][mask[:, 1:]]
+                loss = -logp.gather(-1, y.unsqueeze(-1)).sum()
             (loss / total_tokens).backward()
             loss_sum += loss.item()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -181,10 +181,12 @@ def train(condition: str, seed: int, steps: int = STEPS, teacher_dir: str = "/vo
 
 
 @app.local_entrypoint()
-def main(conditions: str = "all", seeds: str = "0,1,2", steps: int = STEPS):
+def main(conditions: str = "all", seeds: str = "0,1,2", steps: int = STEPS, smoke: bool = False):
+    """--smoke trains on the pilot teacher data into /vol/smoke, which the evaluation never reads."""
     names = list(CONDITIONS) if conditions == "all" else conditions.split(",")
     with volume.batch_upload(force=True) as up:
         up.put_file("data/bfcl_function_names.json", "/inputs/bfcl_function_names.json")
     jobs = [(c, int(s)) for c in names for s in seeds.split(",")]
-    for result in train.starmap([(c, s, steps) for c, s in jobs]):
+    where = ("/vol/smoke/teacher", "/vol/smoke/students") if smoke else ("/vol/teacher", "/vol/students")
+    for result in train.starmap([(c, s, steps, *where) for c, s in jobs]):
         print(json.dumps(result))
