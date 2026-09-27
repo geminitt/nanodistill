@@ -29,7 +29,12 @@ pytest = "*"
 
 [feature.eval.pypi-dependencies]
 bfcl-eval = { version = "*", extras = ["oss-eval-vllm"] }
+transformers = "==4.51.3"   # vllm 0.8.5 predates transformers 5, which removed tokenizer attributes it uses
 nanodistill = { path = ".", editable = true }
 
-[environments]
-eval = { features = ["eval"], no-default-feature = true }
+[environments.eval]
+features = ["eval"]
+no-default-feature = true
+
+[environments.eval.pypi-dependencies]
+soundfile = ">=0.14.0, <0.15"
