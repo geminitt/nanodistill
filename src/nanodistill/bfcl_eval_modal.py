@@ -14,6 +14,7 @@ Each (model, mode) gets its own BFCL project folder on the volume; a finished on
 import json
 import os
 import subprocess
+from pathlib import Path
 
 import modal
 
@@ -22,32 +23,15 @@ GPU = os.environ.get("NANODISTILL_EVAL_GPU", "A10G")
 
 app = modal.App("nanodistill-bfcl")
 image = (modal.Image.debian_slim(python_version="3.12")
-         .pip_install("bfcl-eval[oss-eval-vllm]==2026.3.23", "numpy==1.26.4"))
+         .pip_install("bfcl-eval[oss-eval-vllm]==2026.3.23", "numpy==1.26.4", "soundfile", "transformers==4.51.3")   # qwen-agent imports soundfile
+         .add_local_file(str(Path(__file__).parent / "bfcl_runner.py"), "/root/bfcl_runner.py")
+         .add_local_python_source("nanodistill"))
 hf_cache = modal.Volume.from_name("hf-cache", create_if_missing=True)
 volume = modal.Volume.from_name("nanodistill", create_if_missing=True)
 
-RUNNER = r'''
-import sys
-from bfcl_eval.constants import model_config as mc
-from bfcl_eval.model_handler.local_inference.qwen_fc import QwenFCHandler
-
-class DirectQwenFCHandler(QwenFCHandler):
-    """Qwen3 in non-thinking mode: the prompt ends with the empty think block."""
-    def _format_prompt(self, messages, function):
-        return super()._format_prompt(messages, function) + "<think>\n\n</think>\n\n"
-
-name, hf_name, mode = sys.argv[1], sys.argv[2], sys.argv[3]
-base = mc.MODEL_CONFIG_MAPPING["Qwen/Qwen3-0.6B-FC"]
-mc.MODEL_CONFIG_MAPPING[name] = type(base)(**{**base.__dict__, "model_name": hf_name, "display_name": name,
-    "model_handler": DirectQwenFCHandler if mode == "direct" else QwenFCHandler})
-from bfcl_eval.__main__ import cli
-sys.argv = ["bfcl"] + sys.argv[4:]
-cli()
-'''
-
 
 @app.function(image=image, gpu=GPU, timeout=3 * 3600, volumes={"/root/.cache/huggingface": hf_cache, "/vol": volume},
-              secrets=[modal.Secret.from_name("huggingface")])
+              secrets=[modal.Secret.from_name("huggingface-secret")])
 def evaluate(label: str, hf_name: str, mode: str, local_path: str = "") -> dict:
     root = f"/vol/bfcl/{label}_{mode}"
     summary = f"{root}/summary.json"
@@ -55,12 +39,17 @@ def evaluate(label: str, hf_name: str, mode: str, local_path: str = "") -> dict:
         return json.load(open(summary))
     os.makedirs(root, exist_ok=True)
     env = {**os.environ, "BFCL_PROJECT_ROOT": root}
-    open("/tmp/runner.py", "w").write(RUNNER)
-    registry = f"nanodistill/{label}-{mode}-FC"
+    if local_path:
+        from huggingface_hub import snapshot_download
+
+        from nanodistill.bfcl_local import REFERENCE_FILES, compatible_copy
+        reference_dir = snapshot_download("Qwen/Qwen3-0.6B", allow_patterns=list(REFERENCE_FILES))
+        local_path = compatible_copy(local_path, reference_dir, out="/tmp/student")
+    registry = f"nanodistill/{label.replace('_', '-')}-{mode}-FC"   # BFCL maps "_" in folder names back to "/"
     gen = ["generate", "--model", registry, "--test-category", CATEGORY, "--backend", "vllm", "--num-gpus", "1",
            "--gpu-memory-utilization", "0.9"] + (["--local-model-path", local_path] if local_path else [])
-    subprocess.run(["python", "/tmp/runner.py", registry, hf_name, mode] + gen, env=env, check=True)
-    subprocess.run(["python", "/tmp/runner.py", registry, hf_name, mode,
+    subprocess.run(["python", "/root/bfcl_runner.py", registry, hf_name, mode] + gen, env=env, check=True)
+    subprocess.run(["python", "/root/bfcl_runner.py", registry, hf_name, mode,
                     "evaluate", "--model", registry, "--test-category", CATEGORY], env=env, check=True)
     scores = {}
     for dirpath, _, files in os.walk(f"{root}/score"):
@@ -87,6 +76,9 @@ def main(models: str = "baselines", modes: str = "direct,think"):
             name = entry.path.split("/")[-1]
             mode = "think" if name.startswith("cot_full") else "direct"
             jobs.append((name, "Qwen/Qwen3-0.6B", mode, f"/vol/students/{name}"))
-    for result in evaluate.starmap(jobs):
+    # BFCL serves each model at its full 40,960-token context: Qwen3-8B's KV cache for that does not fit next to
+    # its 16 GB of weights on a 24 GB A10G, so the 8B baseline runs on a 48 GB L40S.
+    calls = [(evaluate.with_options(gpu="L40S") if "8b" in j[0] else evaluate).spawn(*j) for j in jobs]
+    for result in (c.get() for c in calls):
         print(json.dumps({"label": result["label"], "mode": result["mode"],
                           "scores": {k: v.get("accuracy") for k, v in result["scores"].items()}}))
