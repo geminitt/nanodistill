@@ -24,13 +24,16 @@ SHARD = 500
 GPU = os.environ.get("NANODISTILL_GPU", "A10G")
 
 app = modal.App("nanodistill-teacher")
-image = modal.Image.debian_slim(python_version="3.12").pip_install("vllm==0.30.0", "numpy")
+# FlashInfer's sampler compiles kernels at startup and needs nvcc, which the slim image lacks; vLLM's own
+# PyTorch sampler needs nothing extra.
+image = (modal.Image.debian_slim(python_version="3.12").pip_install("vllm==0.30.0", "numpy")
+         .env({"VLLM_USE_FLASHINFER_SAMPLER": "0"}))
 hf_cache = modal.Volume.from_name("hf-cache", create_if_missing=True)
 volume = modal.Volume.from_name("nanodistill", create_if_missing=True)
 
 
 @app.function(image=image, gpu=GPU, timeout=6 * 3600, volumes={"/root/.cache/huggingface": hf_cache, "/vol": volume},
-              secrets=[modal.Secret.from_name("huggingface")])
+              secrets=[modal.Secret.from_name("huggingface-secret")])
 def generate(mode: str, records_path: str, out_dir: str) -> dict:
     import numpy as np
     from vllm import LLM, SamplingParams
