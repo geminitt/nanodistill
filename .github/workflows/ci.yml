@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only the default environment (CPU, no BFCL). The eval environment pins vLLM for the local GPU;
+      # the three tests that need BFCL skip themselves here.
+      - name: Install pixi and the default environment
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: v0.79.0
+          environments: default
+          cache: true
+
+      - name: Run tests
+        run: pixi run test
