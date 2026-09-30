@@ -21,7 +21,7 @@
 
 Resolved = the item-bootstrap p-value **and** the per-seed t-test p-value are both below 0.05 after Holm's correction across the seven tests (and, for non-inferiority, the difference is above -2 points).
 
-Only 5 of the 7 tests have both conditions evaluated; the correction below covers those only and is not final.
+Only 5 of the 7 tests have both conditions evaluated (the study was closed without the others); the correction below covers those only.
 
 | question | A − B | metric | Δ points [95% CI] | per-seed Δ | p items (Holm) | p seeds (Holm) | resolved |
 |---|---|---|---|---|---|---|---|

@@ -150,8 +150,8 @@ def report(runs: dict) -> str:
               f"-{100 * MARGIN:.0f} points).", ""]
     done = [(t, compare(*paired(t[1], t[2]), GROUPS[t[3]], null=t[4])) for t in FAMILY if paired(t[1], t[2])]
     if len(done) < len(FAMILY):
-        lines.append(f"Only {len(done)} of the {len(FAMILY)} tests have both conditions evaluated; the correction "
-                     "below covers those only and is not final.")
+        lines.append(f"Only {len(done)} of the {len(FAMILY)} tests have both conditions evaluated (the study was "
+                     "closed without the others); the correction below covers those only.")
         lines.append("")
     if done:
         hb, ht = holm([r["p_boot"] for _, r in done]), holm([r["p_seed"] for _, r in done])

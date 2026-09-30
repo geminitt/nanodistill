@@ -3,10 +3,11 @@
 **Distilling tool calling from Qwen3-8B into Qwen3-0.6B: which way of learning from the teacher transfers the
 most, and does it survive unseen tools and requests that should not call any tool?**
 
-Status: **5 of 7 conditions done** (15 of 21 training runs); `seq_kd` and `logit_kd` are still to train. The
-Design and Pre-registered analysis sections were committed in `8c0c0f3` before any student was trained and are
-unchanged below; [Deviations](#deviations-from-the-pre-registration) lists every place the study departs
-from them.
+Status: **closed at 5 of 7 conditions** (15 of 21 training runs). `seq_kd` and `logit_kd` were lost to an
+evaluation bug ([Incidents](#incidents), 1) and not retrained: that needs paid compute, and the study stops
+here. The Design and Pre-registered analysis sections were committed in `8c0c0f3` before any student was
+trained and are unchanged below; [Deviations](#deviations-from-the-pre-registration) lists every place the
+study departs from them.
 
 ---
 
@@ -87,7 +88,7 @@ evaluated on the same local GPU (RTX 1000 Ada, 6 GB, bf16); accuracies are in %,
 Baselines (italics) are context, not part of the tests. Qwen3-0.6B-Base never emits a tool call, so it
 "passes" every irrelevance item; irrelevance accuracy must always be read next to the primary metric.
 
-**Pre-registered tests available so far** (Holm's correction over these 5; the final correction runs over 7):
+**Pre-registered tests** (Holm's correction over the 5 that could be run):
 
 | Question | A − B | Metric | Δ points [95% CI] | Per-seed Δ | Resolved |
 |---|---|---|---|---|---|
@@ -97,8 +98,8 @@ Baselines (italics) are context, not part of the tests. Qwen3-0.6B-Base never em
 | Refusal examples teach not calling | `irrelevance` − `seq_kd_filtered` | irrelevance | +54.1 [+51.3, +56.9] | +54.1, +58.0, +50.3 | yes |
 | Refusal examples cost ≤ 2 points | `irrelevance` − `seq_kd_filtered` | primary | +0.1 [−1.2, +1.3] | +0.3, −0.6, +0.5 | no** |
 
-\* Resolved with 5 tests; if the two missing tests turn out null, the per-seed p-value after correction over 7
-is 0.071 and it would not be. \*\* The interval lies above −2 points, but three seeds do not give the per-seed
+\* Resolved with 5 tests; had the two missing tests been run and come out null, the per-seed p-value after
+correction over 7 would be 0.071 and it would not be. \*\* The interval lies above −2 points, but three seeds do not give the per-seed
 t test enough power after correction.
 
 What the numbers say so far:
@@ -112,6 +113,13 @@ What the numbers say so far:
 - **Teacher answers vs the dataset's own**: no difference on the primary metric; the dataset answers do
   better on live AST (−6.4 points, secondary, uncorrected).
 
+**Against the ready-made Qwen3-0.6B** (descriptive; the baseline has one run): no student is better on every
+metric at once. The most balanced student, `irrelevance`, beats Qwen3-0.6B in non-thinking mode by 5.3 points
+on the primary metric and 3.7 on live AST at the same output length, but handles 16.4 points fewer of the
+requests that should not call any tool (65.8 against 82.2). An agent built on it would make more wrong calls,
+which usually cost more than missed ones, so these students do not replace Qwen3-0.6B. What they do show is
+how far 400 steps on 5,000 examples move the base model: from 0 to 81 on the primary metric.
+
 **Reported alongside** (pre-registered): the direct-answer filter keeps 3,917 of 5,000 teacher answers
 (78.3%), the reasoning filter 3,994 of 5,000 (79.9%); the teacher declines to call a tool on 925 of the 1,000
 irrelevance prompts; 6,118 of 60,000 xLAM examples were removed for sharing a tool name with BFCL. Unparseable
@@ -124,7 +132,8 @@ outputs per student: 0–5 of 3,641 (table in `results/summary.md`).
 | Holm's correction "across the seven comparisons on the primary metric" | One family of 7 tests, each on its own metric (6 differences against 0, plus non-inferiority against −2 points), Holm over all 7; other metrics are descriptive | The seventh comparison is the irrelevance-metric test; the sentence cannot be read literally |
 | Baselines: Qwen3-0.6B and Qwen3-8B | Qwen3-0.6B-Base added | Shows what distillation adds from the students' starting point |
 | Evaluation settings unspecified beyond BFCL | Students and 0.6B baselines on a local 6 GB GPU with context capped at 12,288 tokens and Qwen3-0.6B's generation settings; Qwen3-8B and Base on Modal at BFCL's default 40,960 | The cap fits 6 GB and changes nothing: the longest prompt is 6,178 tokens, so every item keeps BFCL's 4,096-token budget. One generation config for every 0.6B model (Base's own would stop output at 2,048 tokens) |
-| 7 conditions | 5 so far | `seq_kd` and `logit_kd` must be retrained (Incidents, 1) and wait for compute budget |
+| 7 conditions, 7 tests | 5 conditions; Holm's correction over the 5 tests that could be run | `seq_kd` and `logit_kd` were overwritten (Incidents, 1); retraining them needs paid compute, and the study was closed without them |
+| On-policy distillation as the next step if budget remains | Not done | The study was closed at 5 conditions |
 
 ## Incidents
 
