@@ -13,6 +13,13 @@ most, and does it survive unseen tools and requests that should not call any too
 
 ---
 
+> **Note:** **This project did not reach its goal.** The aim was a small tool-calling model better than what can
+> already be downloaded. No trained student is: the most balanced one, `irrelevance`, beats Qwen3-0.6B by 5.3
+> points on the primary metric but handles 16.4 points fewer of the requests that should not call any tool
+> ([Results](#results-5-of-7-conditions)). The two comparisons closest to the central question, soft against
+> hard targets and filtering the teacher's answers, were never run. No model is released. What remains useful
+> are the findings on refusal examples and test-time reasoning, and the evaluation checks and incidents below.
+
 > **Status:** **closed at 5 of 7 conditions** (15 of 21 training runs). `seq_kd` and `logit_kd` were lost to an
 > evaluation bug ([Incidents](#incidents), 1) and not retrained: that needs paid compute, and the study stops
 > here. The Design and Pre-registered analysis sections were committed in `8c0c0f3` before any student was
