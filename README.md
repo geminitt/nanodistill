@@ -1,13 +1,23 @@
+<div align="center">
+
 # nanodistill
+
+[![CI](https://img.shields.io/github/actions/workflow/status/geminitt/nanodistill/ci.yml?branch=main&label=CI&style=for-the-badge)](https://github.com/geminitt/nanodistill/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/PYTHON-3.12-A19654?style=for-the-badge)](./pixi.toml)
+[![License](https://img.shields.io/badge/LICENSE-MIT-6B7F4E?style=for-the-badge)](./LICENSE)
 
 **Distilling tool calling from Qwen3-8B into Qwen3-0.6B: which way of learning from the teacher transfers the
 most, and does it survive unseen tools and requests that should not call any tool?**
 
-Status: **closed at 5 of 7 conditions** (15 of 21 training runs). `seq_kd` and `logit_kd` were lost to an
-evaluation bug ([Incidents](#incidents), 1) and not retrained: that needs paid compute, and the study stops
-here. The Design and Pre-registered analysis sections were committed in `8c0c0f3` before any student was
-trained and are unchanged below; [Deviations](#deviations-from-the-pre-registration) lists every place the
-study departs from them.
+</div>
+
+---
+
+> **Status:** **closed at 5 of 7 conditions** (15 of 21 training runs). `seq_kd` and `logit_kd` were lost to an
+> evaluation bug ([Incidents](#incidents), 1) and not retrained: that needs paid compute, and the study stops
+> here. The Design and Pre-registered analysis sections were committed in `8c0c0f3` before any student was
+> trained and are unchanged below; [Deviations](#deviations-from-the-pre-registration) lists every place the
+> study departs from them.
 
 ---
 
@@ -38,6 +48,8 @@ study departs from them.
 
 On-policy distillation (the student samples, the teacher scores) is the next step if budget remains; it is not
 part of the pre-registered comparisons.
+
+---
 
 ## Pre-registered analysis
 
@@ -85,8 +97,8 @@ evaluated on the same local GPU (RTX 1000 Ada, 6 GB, bf16); accuracies are in %,
 | *Qwen3-0.6B, non-thinking / thinking (local)* | *75.7 / 78.5* | *50.0 / 57.7* | *82.2 / 80.0* | *44 / 264* |
 | *Qwen3-8B teacher, non-thinking / thinking (Modal)* | *93.9 / 92.8* | *77.1 / 79.6* | *78.6 / 78.1* | *45 / 335* |
 
-Baselines (italics) are context, not part of the tests. Qwen3-0.6B-Base never emits a tool call, so it
-"passes" every irrelevance item; irrelevance accuracy must always be read next to the primary metric.
+> **Note:** Baselines (italics) are context, not part of the tests. Qwen3-0.6B-Base never emits a tool call, so it
+> "passes" every irrelevance item; irrelevance accuracy must always be read next to the primary metric.
 
 **Pre-registered tests** (Holm's correction over the 5 that could be run):
 
@@ -125,6 +137,8 @@ how far 400 steps on 5,000 examples move the base model: from 0 to 81 on the pri
 irrelevance prompts; 6,118 of 60,000 xLAM examples were removed for sharing a tool name with BFCL. Unparseable
 outputs per student: 0–5 of 3,641 (table in `results/summary.md`).
 
+---
+
 ## Deviations from the pre-registration
 
 | Pre-registered | What was done | Why |
@@ -134,6 +148,8 @@ outputs per student: 0–5 of 3,641 (table in `results/summary.md`).
 | Evaluation settings unspecified beyond BFCL | Students and 0.6B baselines on a local 6 GB GPU with context capped at 12,288 tokens and Qwen3-0.6B's generation settings; Qwen3-8B and Base on Modal at BFCL's default 40,960 | The cap fits 6 GB and changes nothing: the longest prompt is 6,178 tokens, so every item keeps BFCL's 4,096-token budget. One generation config for every 0.6B model (Base's own would stop output at 2,048 tokens) |
 | 7 conditions, 7 tests | 5 conditions; Holm's correction over the 5 tests that could be run | `seq_kd` and `logit_kd` were overwritten (Incidents, 1); retraining them needs paid compute, and the study was closed without them |
 | On-policy distillation as the next step if budget remains | Not done | The study was closed at 5 conditions |
+
+---
 
 ## Incidents
 
@@ -153,6 +169,8 @@ outputs per student: 0–5 of 3,641 (table in `results/summary.md`).
    zeroed or cut short. `nanodistill.fetch` downloads three copies at full size and rebuilds each 64 KiB
    block from a copy where it is not all zero; trained weights never contain an all-zero block.
 
+---
+
 ## Measurement checks
 
 - Per-item correctness read from BFCL's files equals BFCL's own correct counts in all 286 category files.
@@ -162,6 +180,8 @@ outputs per student: 0–5 of 3,641 (table in `results/summary.md`).
 - Evaluation noise: the same student evaluated twice locally differs on 21 of 3,641 items (±0.2 points);
   Qwen3-0.6B local vs Modal differs on 1% of items without thinking and 8% with thinking (no direction:
   sign-test p = 0.29 on the primary metric). All students are therefore evaluated on one machine.
+
+---
 
 ## Layout
 
@@ -177,6 +197,8 @@ tests/            pytest; BFCL-dependent tests run in the eval environment
 Environments: `pixi run test` (default, CPU) and `pixi run -e eval pytest -q tests` (BFCL installed).
 Compute runs on [Modal](https://modal.com); `pixi run modal setup` authenticates once; a Modal secret named
 `huggingface-secret` holds a read-only Hugging Face token (xLAM is gated).
+
+---
 
 ## Reproduce
 
