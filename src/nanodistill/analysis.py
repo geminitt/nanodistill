@@ -20,8 +20,9 @@ PRIMARY = ["simple_python", "multiple", "parallel", "parallel_multiple"]
 LIVE = ["live_simple", "live_multiple", "live_parallel", "live_parallel_multiple"]
 IRRELEVANCE = ["irrelevance", "live_irrelevance"]
 GROUPS = {"primary": PRIMARY, "live AST": LIVE, "irrelevance": IRRELEVANCE}   # primary: non-live Python AST
-# The seven pre-registered tests (README, "Comparisons"), each on its own metric. Holm's correction runs across
-# all seven; a test is resolved when both its item-bootstrap and its per-seed p-values pass after correction.
+# The seven pre-registered tests (README, "Comparisons"), each on its own metric. One Holm correction runs across
+# those whose two conditions were evaluated (5 of the 7, the study was closed without the others); a test is
+# resolved when both its item-bootstrap and its per-seed p-values pass after correction.
 # (question, A, B, metric group, null difference A - B)
 MARGIN = 0.02     # non-inferiority margin for `irrelevance` on the primary metric
 FAMILY = [
@@ -146,7 +147,7 @@ def report(runs: dict) -> str:
 
     lines += ["", "## Pre-registered tests", "",
               "Resolved = the item-bootstrap p-value **and** the per-seed t-test p-value are both below 0.05 after "
-              "Holm's correction across the seven tests (and, for non-inferiority, the difference is above "
+              "one Holm correction across the tests in the table (and, for non-inferiority, the difference is above "
               f"-{100 * MARGIN:.0f} points).", ""]
     done = [(t, compare(*paired(t[1], t[2]), GROUPS[t[3]], null=t[4])) for t in FAMILY if paired(t[1], t[2])]
     if len(done) < len(FAMILY):

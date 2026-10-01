@@ -106,6 +106,7 @@ evaluated on the same local GPU (RTX 1000 Ada, 6 GB, bf16); accuracies are in %,
 
 > **Note:** Baselines (italics) are context, not part of the tests. Qwen3-0.6B-Base never emits a tool call, so it
 > "passes" every irrelevance item; irrelevance accuracy must always be read next to the primary metric.
+> Output tokens are the median over the primary categories.
 
 **Pre-registered tests** (Holm's correction over the 5 that could be run):
 
@@ -127,8 +128,9 @@ What the numbers say so far:
   About 11% of its outputs never close the think block before BFCL's 4,096-token budget (greedy decoding
   loops), but those account for only ~10% of its primary errors; most errors are wrong calls after reasoning.
 - **Reasoning traces used only in training**: +1.3 points, not resolved. Note that equal steps × sequences
-  means `cot_train_only` trains on 8× more target tokens than `seq_kd_filtered` (1.67M vs 0.20M), so even a
-  resolved gain could not be credited to the reasoning content alone.
+  give `cot_train_only` about 4× more trained target tokens than `seq_kd_filtered` (its sequences average 211
+  target tokens against 51; its training set holds 1.67M target tokens against 0.20M), so even a resolved
+  gain could not be credited to the reasoning content alone.
 - **Teacher answers vs the dataset's own**: no difference on the primary metric; the dataset answers do
   better on live AST (−6.4 points, secondary, uncorrected).
 
@@ -195,7 +197,8 @@ outputs per student: 0–5 of 3,641 (table in `results/summary.md`).
 ```
 src/nanodistill/  data (format), teacher and train (Modal), fetch (verified download), bfcl_local
                   (local BFCL), bfcl_runner (BFCL CLI with the non-thinking handler), bfcl_eval_modal
-                  (BFCL on Modal, for Qwen3-8B), analysis (pre-registered tests)
+                  (BFCL on Modal, for the baselines: Qwen3-8B, Qwen3-0.6B-Base, and Qwen3-0.6B as a
+                  cross-check of the local runs), analysis (pre-registered tests)
 data/             BFCL function names used to remove overlapping xLAM examples
 results/          summary.md, written by nanodistill.analysis
 tests/            pytest; BFCL-dependent tests run in the eval environment
@@ -215,6 +218,8 @@ pixi run modal run --detach src/nanodistill/train.py --conditions all --seeds 0,
 pixi run python -m nanodistill.fetch seq_kd_filtered_s0 ...                  # students -> runs/students/
 pixi run -e eval python -m nanodistill.bfcl_local --label seq_kd_filtered_s0 \
     --model runs/students/seq_kd_filtered_s0 --mode direct                   # --mode think for cot_full
-pixi run modal run src/nanodistill/bfcl_eval_modal.py --models baselines    # Qwen3-8B does not fit 6 GB
+pixi run -e eval python -m nanodistill.bfcl_local --label qwen3-0.6b-local \
+    --model Qwen/Qwen3-0.6B --mode direct                                    # and --mode think
+pixi run modal run src/nanodistill/bfcl_eval_modal.py                        # Qwen3-8B does not fit 6 GB
 pixi run python -m nanodistill.analysis --bfcl runs/bfcl --out results
 ```

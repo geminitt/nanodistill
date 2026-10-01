@@ -1,6 +1,6 @@
 """BFCL v4 single-turn evaluation on the local GPU (a 6 GB card is enough for a 0.6B model).
 
-    pixi run -e eval python -m nanodistill.bfcl_local --label qwen3-0.6b --model Qwen/Qwen3-0.6B --mode direct
+    pixi run -e eval python -m nanodistill.bfcl_local --label qwen3-0.6b-local --model Qwen/Qwen3-0.6B --mode direct
     pixi run -e eval python -m nanodistill.bfcl_local --label cot_full_s0 --model runs/students/cot_full_s0 --mode think
 
 Results go to runs/bfcl/{label}_{mode}; a finished one (summary.json) is not recomputed, and an interrupted one
